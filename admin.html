@@ -31,7 +31,7 @@
 
   <main id="app" class="hidden">
     <div class="stats"><div class="stat"><span class="muted">Role</span><b id="statRole">—</b></div><div class="stat"><span class="muted">Jobs</span><b id="statJobs">0</b></div><div class="stat"><span class="muted">Candidates</span><b id="statCandidates">0</b></div><div class="stat"><span class="muted">Workspaces</span><b id="statWorkspaces">0</b></div></div>
-    <div class="tabs"><button class="tab active" data-tab="candidates">Candidates</button><button class="tab" data-tab="jobs">Jobs</button><button class="tab admin-only" data-tab="users">Access & Users</button></div>
+    <div class="tabs"><button class="tab active" data-tab="candidates">Candidates</button><button class="tab" data-tab="jobs">Jobs</button><button class="tab admin-only" data-tab="workspaces">Workspaces</button><button class="tab admin-only" data-tab="users">Access & Users</button></div>
     <div id="globalMsg"></div>
 
     <section id="tab-candidates">
@@ -42,6 +42,26 @@
     <section id="tab-jobs" class="hidden">
       <div class="section-title"><div><h2>Jobs</h2><div class="muted">Manage open and closed roles.</div></div></div>
       <div class="grid"><form id="jobForm" class="card write-only"><b>Add job</b><label>Title</label><input name="title" required><label>Department</label><input name="department"><label>Location</label><input name="location"><label>Employment type</label><input name="employment_type" placeholder="Full-time"><label>Status</label><select name="status"><option>open</option><option>paused</option><option>closed</option></select><label>Workspace</label><select name="workspace_id" id="jobWorkspace"></select><button class="btn" style="margin-top:12px">Add job</button></form><div><table><thead><tr><th>Role</th><th>Location</th><th>Status</th><th>Workspace</th><th>Actions</th></tr></thead><tbody id="jobRows"></tbody></table></div></div>
+    </section>
+
+    <section id="tab-workspaces" class="hidden admin-only">
+      <div class="section-title"><div><h2>Workspaces</h2><div class="muted">Create, edit, and remove recruitment workspaces.</div></div></div>
+      <div class="grid">
+        <form id="workspaceForm" class="card">
+          <b>Add workspace</b>
+          <label>Name</label><input name="name" required placeholder="Healthcare Recruitment">
+          <label>Slug</label><input name="slug" placeholder="healthcare-recruitment">
+          <label>Description</label><textarea name="description" placeholder="Healthcare recruitment workflow"></textarea>
+          <label><input name="is_public" type="checkbox" checked style="width:auto"> Public workspace</label>
+          <button class="btn" style="margin-top:12px">Add workspace</button>
+        </form>
+        <div>
+          <table>
+            <thead><tr><th>Workspace</th><th>Slug</th><th>Visibility</th><th>Actions</th></tr></thead>
+            <tbody id="workspaceRows"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section id="tab-users" class="hidden admin-only">
@@ -67,11 +87,16 @@ $('#loginBtn').onclick=async()=>{msg($('#loginMsg'),''); const {data,error}=awai
 $('#setPwBtn').onclick=async()=>{const p=$('#newPassword').value;if(p.length<8)return msg($('#pwMsg'),'Use at least 8 characters.',true);const {error}=await sb.auth.updateUser({password:p});if(error)return msg($('#pwMsg'),error.message,true);history.replaceState({},'',location.pathname);$('#setPasswordView').classList.add('hidden');const {data}=await sb.auth.getSession();session=data.session;await enter()};
 $('#logout').onclick=async()=>{await sb.auth.signOut();location.href='/admin'};
 async function enter(){const uid=session.user.id;const {data,error}=await sb.from('profiles').select('*').eq('id',uid).single();if(error||!data){await sb.auth.signOut();return msg($('#loginMsg'),'No ATS access profile was found for this account.',true)}profile=data;$('#loginView').classList.add('hidden');$('#setPasswordView').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').classList.remove('hidden');$('#identity').textContent=`${profile.full_name||session.user.email} · ${profile.role}`;$('#statRole').textContent=profile.role; if(profile.role!=='admin')$$('.admin-only').forEach(x=>x.classList.add('hidden')); if(!['admin','editor'].includes(profile.role))$$('.write-only').forEach(x=>x.classList.add('hidden'));await loadData();}
-async function loadData(){const [w,j,c]=await Promise.all([sb.from('workspaces').select('*').order('name'),sb.from('jobs').select('*').order('created_at',{ascending:false}),sb.from('candidates').select('*').order('created_at',{ascending:false})]);if(w.error||j.error||c.error)return msg($('#globalMsg'),(w.error||j.error||c.error).message,true);workspaces=w.data||[];jobs=j.data||[];candidates=c.data||[];$('#statWorkspaces').textContent=workspaces.length;$('#statJobs').textContent=jobs.length;$('#statCandidates').textContent=candidates.length;fillSelects();renderJobs();renderCandidates();if(profile.role==='admin')loadUsers();}
+async function loadData(){const [w,j,c]=await Promise.all([sb.from('workspaces').select('*').order('name'),sb.from('jobs').select('*').order('created_at',{ascending:false}),sb.from('candidates').select('*').order('created_at',{ascending:false})]);if(w.error||j.error||c.error)return msg($('#globalMsg'),(w.error||j.error||c.error).message,true);workspaces=w.data||[];jobs=j.data||[];candidates=c.data||[];$('#statWorkspaces').textContent=workspaces.length;$('#statJobs').textContent=jobs.length;$('#statCandidates').textContent=candidates.length;fillSelects();renderJobs();renderCandidates();renderWorkspaces();if(profile.role==='admin')loadUsers();}
 function fillSelects(){const opts=workspaces.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');$('#candidateWorkspace').innerHTML=opts;$('#jobWorkspace').innerHTML=opts;$('#candidateJob').innerHTML='<option value="">No linked job</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('')}
 function wname(id){return workspaces.find(w=>w.id===id)?.name||'—'}
 function renderCandidates(){$('#candidateRows').innerHTML=candidates.map(c=>`<tr><td><b>${esc(c.full_name)}</b><br><span class="muted">${esc(c.email||'')}</span></td><td>${esc(c.current_title||'—')}</td><td><span class="pill">${esc(c.stage||'—')}</span></td><td>${esc(wname(c.workspace_id))}</td><td>${['admin','editor'].includes(profile.role)?`<div class="row-actions"><button class="btn secondary" onclick="editCandidate('${c.id}')">Edit</button><button class="btn danger" onclick="deleteCandidate('${c.id}')">Delete</button></div>`:'Read only'}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No candidates yet.</td></tr>'}
 function renderJobs(){$('#jobRows').innerHTML=jobs.map(j=>`<tr><td><b>${esc(j.title)}</b><br><span class="muted">${esc(j.department||'')}</span></td><td>${esc(j.location||'—')}</td><td><span class="pill">${esc(j.status||'—')}</span></td><td>${esc(wname(j.workspace_id))}</td><td>${['admin','editor'].includes(profile.role)?`<div class="row-actions"><button class="btn secondary" onclick="editJob('${j.id}')">Edit</button><button class="btn danger" onclick="deleteJob('${j.id}')">Delete</button></div>`:'Read only'}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No jobs yet.</td></tr>'}
+function renderWorkspaces(){const el=$('#workspaceRows');if(!el)return;el.innerHTML=workspaces.map(w=>`<tr><td><b>${esc(w.name)}</b><br><span class="muted">${esc(w.description||'')}</span></td><td>${esc(w.slug||'—')}</td><td><span class="pill">${w.is_public?'Public':'Private'}</span></td><td><div class="row-actions"><button class="btn secondary" onclick="editWorkspace('${w.id}')">Edit</button><button class="btn danger" onclick="deleteWorkspace('${w.id}')">Delete</button></div></td></tr>`).join('')||'<tr><td colspan="4" class="muted">No workspaces yet.</td></tr>'}
+function makeSlug(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}
+$('#workspaceForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),row=Object.fromEntries(f.entries());row.name=(row.name||'').trim();row.slug=makeSlug(row.slug||row.name);row.description=(row.description||'').trim();row.is_public=f.get('is_public')==='on';if(!row.name||!row.slug)return msg($('#globalMsg'),'Workspace name is required.',true);const {error}=await sb.from('workspaces').insert(row);if(error)return msg($('#globalMsg'),error.message,true);msg($('#globalMsg'),'Workspace added.');e.target.reset();e.target.querySelector('[name="is_public"]').checked=true;await loadData()};
+window.editWorkspace=async id=>{const w=workspaces.find(x=>x.id===id);if(!w)return;const name=prompt('Workspace name:',w.name||'');if(name===null)return;const slugInput=prompt('Slug:',w.slug||makeSlug(name));if(slugInput===null)return;const description=prompt('Description:',w.description||'');if(description===null)return;const visibility=confirm('Make this workspace public?\\n\\nOK = Public\\nCancel = Private');const {error}=await sb.from('workspaces').update({name:name.trim(),slug:makeSlug(slugInput||name),description:description.trim(),is_public:visibility}).eq('id',id);if(error)return msg($('#globalMsg'),error.message,true);msg($('#globalMsg'),'Workspace updated.');await loadData()};
+window.deleteWorkspace=async id=>{const w=workspaces.find(x=>x.id===id);if(!w||!confirm(`Delete workspace "${w.name}"?\\n\\nIf jobs or candidates are linked to it, deletion will be blocked.`))return;const {error}=await sb.from('workspaces').delete().eq('id',id);if(error)return msg($('#globalMsg'),'Could not delete workspace. Remove its linked jobs/candidates first. '+error.message,true);msg($('#globalMsg'),'Workspace deleted.');await loadData()};
 $('#candidateForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target), row=Object.fromEntries(f.entries());row.is_demo=f.get('is_demo')==='on';if(!row.job_id)row.job_id=null;const {error}=await sb.from('candidates').insert(row);if(error)return msg($('#globalMsg'),error.message,true);e.target.reset();await loadData()};
 $('#jobForm').onsubmit=async e=>{e.preventDefault();const row=Object.fromEntries(new FormData(e.target).entries());const {error}=await sb.from('jobs').insert(row);if(error)return msg($('#globalMsg'),error.message,true);e.target.reset();await loadData()};
 window.deleteCandidate=async id=>{if(!confirm('Delete this candidate?'))return;const {error}=await sb.from('candidates').delete().eq('id',id);if(error)return msg($('#globalMsg'),error.message,true);await loadData()};
@@ -83,7 +108,7 @@ async function loadUsers(){try{const d=await api('/api/admin-users');$('#userRow
 $('#inviteForm').onsubmit=async e=>{e.preventDefault();try{const b=Object.fromEntries(new FormData(e.target).entries());b.redirectTo=location.origin+'/admin';await api('/api/admin-users',{method:'POST',body:JSON.stringify(b)});msg($('#globalMsg'),'Invitation sent.');e.target.reset();await loadUsers()}catch(err){msg($('#globalMsg'),err.message,true)}};
 window.changeRole=async(id,role)=>{try{await api('/api/admin-users',{method:'PATCH',body:JSON.stringify({id,role})});msg($('#globalMsg'),'Role updated.');await loadUsers()}catch(e){msg($('#globalMsg'),e.message,true)}};
 window.revokeUser=async id=>{if(!confirm('Revoke this user and remove their login?'))return;try{await api('/api/admin-users?id='+encodeURIComponent(id),{method:'DELETE'});msg($('#globalMsg'),'Access revoked.');await loadUsers()}catch(e){msg($('#globalMsg'),e.message,true)}};
-$$('.tab').forEach(b=>b.onclick=()=>{$$('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');['candidates','jobs','users'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==b.dataset.tab))});
+$$('.tab').forEach(b=>b.onclick=()=>{$$('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');['candidates','jobs','workspaces','users'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==b.dataset.tab))});
 boot();
 </script>
 </body></html>
